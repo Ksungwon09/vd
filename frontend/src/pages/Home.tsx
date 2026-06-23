@@ -7,6 +7,7 @@ interface VideoFormat {
   resolution: string;
   ext: string;
   filesize: number | null;
+  description?: string;
 }
 
 interface VideoInfo {
@@ -20,6 +21,7 @@ export function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
+  const [activeJob, setActiveJob] = useState<{ id: string, status: string, progress: number, message: string } | null>(null);
 
   const fetchVideoInfo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,23 +45,54 @@ export function Home() {
 
   const handleDownload = async (formatId: string) => {
     try {
-      // 1. Get short-lived download token
       const tokenRes = await api.get('/video/download-token');
       const downloadToken = tokenRes.data.download_token;
 
-      // 2. Construct download URL with token
-      const downloadUrl = `${api.defaults.baseURL}/video/download?token=${downloadToken}&url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`;
-
-      // 3. Trigger download via hidden iframe or window location
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.setAttribute('download', ''); // hint browser to download
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
+      const res = await api.post('/video/prepare-download', null, {
+        params: {
+          token: downloadToken,
+          url: url,
+          format_id: formatId
+        }
+      });
+      
+      const jobId = res.data.job_id;
+      setActiveJob({ id: jobId, status: 'starting', progress: 0, message: '서버 다운로드 준비 중...' });
+      pollJobStatus(jobId, downloadToken);
     } catch (err: any) {
       setError('Failed to initiate download: ' + (err.response?.data?.detail || 'Unknown error'));
+    }
+  };
+
+  const pollJobStatus = async (jobId: string, token: string) => {
+    try {
+      const res = await api.get(`/video/status/${jobId}`);
+      setActiveJob(res.data);
+
+      if (res.data.status === 'error') {
+        setError(res.data.message);
+        setTimeout(() => setActiveJob(null), 3000);
+        return;
+      }
+
+      if (res.data.status === 'ready') {
+        // Trigger actual download
+        const downloadUrl = `${api.defaults.baseURL}/video/download-file/${jobId}?token=${token}`;
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.setAttribute('download', '');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        setTimeout(() => setActiveJob(null), 3000);
+        return;
+      }
+
+      // Poll again after 1 second
+      setTimeout(() => pollJobStatus(jobId, token), 1000);
+    } catch (err) {
+      setTimeout(() => pollJobStatus(jobId, token), 1000);
     }
   };
 
@@ -161,6 +194,11 @@ export function Home() {
                             <span>•</span>
                             <span>{formatFileSize(format.filesize)}</span>
                           </span>
+                          {format.description && (
+                            <span className="text-xs text-gray-400 mt-1">
+                              {format.description}
+                            </span>
+                          )}
                         </div>
                         <button
                           onClick={() => handleDownload(format.format_id)}
@@ -183,6 +221,34 @@ export function Home() {
           </div>
         )}
       </div>
+
+      {activeJob && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">다운로드 진행 상황</h3>
+            <p className="text-gray-600 mb-6 text-sm">{activeJob.message}</p>
+            
+            <div className="w-full bg-gray-200 rounded-full h-3 mb-2 overflow-hidden">
+              <div 
+                className={`h-3 rounded-full transition-all duration-300 ${activeJob.status === 'error' ? 'bg-red-500' : activeJob.status === 'ready' ? 'bg-green-500' : 'bg-blue-600'}`}
+                style={{ width: `${Math.max(5, activeJob.progress)}%` }}
+              ></div>
+            </div>
+            
+            <div className="flex justify-between text-xs text-gray-500 font-medium">
+              <span>{activeJob.status === 'merging' ? '병합 중...' : activeJob.status === 'ready' ? '완료' : '진행 중'}</span>
+              <span>{activeJob.progress.toFixed(1)}%</span>
+            </div>
+            
+            {activeJob.status === 'ready' && (
+              <p className="text-green-600 text-sm mt-6 font-bold text-center">다운로드가 시작되었습니다!</p>
+            )}
+            {activeJob.status === 'error' && (
+              <button onClick={() => setActiveJob(null)} className="mt-6 w-full py-2 bg-gray-100 text-gray-800 rounded-lg font-medium hover:bg-gray-200">닫기</button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
