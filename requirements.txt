@@ -9,3 +9,4 @@ pyjwt
 pydantic
 python-multipart
 yt-dlp
+slowapi
