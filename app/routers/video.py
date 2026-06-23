@@ -45,6 +45,8 @@ async def get_video_info(
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
+            'ignoreerrors': True,
+            'format': 'all',  # Prevent default format selection from failing
             'http_headers': {
                 'User-Agent': USER_AGENT
             }
@@ -58,9 +60,13 @@ async def get_video_info(
 
     try:
         info = await asyncio.to_thread(extract_info)
+        if not info:
+            raise Exception("Video information could not be extracted.")
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
         if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
+            raise HTTPException(status_code=403, detail="COOKIE_ERROR")
+        if "Requested format is not available" in error_msg:
             raise HTTPException(status_code=403, detail="COOKIE_ERROR")
         raise HTTPException(status_code=400, detail=f"Failed to extract info: {error_msg}")
     except Exception as e:
@@ -301,7 +307,7 @@ def process_download_job(job_id: str, url: str, format_id: str, username: str):
 
     except Exception as e:
         error_msg = str(e)
-        if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
+        if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower() or "Requested format is not available" in error_msg:
             job['status'] = 'error'
             job['message'] = "COOKIE_ERROR"
         else:
