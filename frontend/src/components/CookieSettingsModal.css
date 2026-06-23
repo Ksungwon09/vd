@@ -1,0 +1,109 @@
+.cookie-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.cookie-modal-content {
+  background: #1e1e2d;
+  color: #fff;
+  padding: 30px;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.3s ease-out;
+}
+
+.cookie-modal-desc {
+  font-size: 0.9rem;
+  color: #a0a0b0;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.cookie-status-active {
+  background: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.cookie-textarea {
+  width: 100%;
+  background: #2a2a3c;
+  border: 1px solid #3a3a4c;
+  border-radius: 8px;
+  color: #fff;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+  margin-bottom: 15px;
+}
+
+.cookie-textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.cookie-error {
+  color: #ff4757;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.cookie-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cookie-btn-cancel, .cookie-btn-save, .cookie-btn-delete {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cookie-btn-cancel {
+  background: #3a3a4c;
+  color: #fff;
+}
+.cookie-btn-cancel:hover {
+  background: #4a4a5c;
+}
+
+.cookie-btn-save {
+  background: #6366f1;
+  color: #fff;
+}
+.cookie-btn-save:hover {
+  background: #4f46e5;
+}
+
+.cookie-btn-delete {
+  background: transparent;
+  color: #ff4757;
+  border: 1px solid #ff4757;
+  margin-right: auto;
+}
+.cookie-btn-delete:hover {
+  background: rgba(255, 71, 87, 0.1);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}

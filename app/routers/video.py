@@ -26,6 +26,9 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+COOKIES_DIR = "data/cookies"
+os.makedirs(COOKIES_DIR, exist_ok=True)
+
 @router.get("/info")
 @limiter.limit("10/minute")
 async def get_video_info(
@@ -46,11 +49,20 @@ async def get_video_info(
                 'User-Agent': USER_AGENT
             }
         }
+        cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+        if os.path.exists(cookie_file):
+            ydl_opts['cookiefile'] = cookie_file
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
     try:
         info = await asyncio.to_thread(extract_info)
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
+            raise HTTPException(status_code=403, detail="COOKIE_ERROR")
+        raise HTTPException(status_code=400, detail=f"Failed to extract info: {error_msg}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to extract info: {str(e)}")
 
@@ -144,6 +156,28 @@ async def get_download_token(current_user: models.User = Depends(get_current_act
     token = create_download_token(current_user.username)
     return {"download_token": token}
 
+class CookieData(BaseModel):
+    content: str
+
+@router.post("/cookies")
+async def save_cookies(data: CookieData, current_user: models.User = Depends(get_current_active_user)):
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    with open(cookie_file, "w", encoding="utf-8") as f:
+        f.write(data.content)
+    return {"message": "Cookies saved successfully"}
+
+@router.delete("/cookies")
+async def delete_cookies(current_user: models.User = Depends(get_current_active_user)):
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    if os.path.exists(cookie_file):
+        os.remove(cookie_file)
+    return {"message": "Cookies deleted successfully"}
+
+@router.get("/cookies/status")
+async def check_cookies_status(current_user: models.User = Depends(get_current_active_user)):
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    return {"has_cookies": os.path.exists(cookie_file)}
+
 class JobStatus(BaseModel):
     id: str
     status: str  # "starting", "downloading", "merging", "ready", "error"
@@ -177,7 +211,7 @@ async def prepare_download(
         "filename": None
     }
     
-    background_tasks.add_task(process_download_job, job_id, url, format_id)
+    background_tasks.add_task(process_download_job, job_id, url, format_id, current_user.username)
     return {"job_id": job_id}
 
 @router.get("/status/{job_id}", response_model=JobStatus)
@@ -190,12 +224,14 @@ async def get_job_status(job_id: str, current_user: models.User = Depends(get_cu
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
-def process_download_job(job_id: str, url: str, format_id: str):
+def process_download_job(job_id: str, url: str, format_id: str, username: str):
     job = download_jobs.get(job_id)
     if not job:
         return
         
     try:
+        cookie_file = os.path.join(COOKIES_DIR, f"{username}.txt")
+        
         # 1. Get title
         ydl_opts_info = {
             'quiet': True,
@@ -203,6 +239,9 @@ def process_download_job(job_id: str, url: str, format_id: str):
             'skip_download': True,
             'http_headers': {'User-Agent': USER_AGENT}
         }
+        if os.path.exists(cookie_file):
+            ydl_opts_info['cookiefile'] = cookie_file
+
         with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get('title', 'video')
@@ -238,6 +277,8 @@ def process_download_job(job_id: str, url: str, format_id: str):
             'progress_hooks': [progress_hook],
             'http_headers': {'User-Agent': USER_AGENT}
         }
+        if os.path.exists(cookie_file):
+            ydl_opts['cookiefile'] = cookie_file
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -259,8 +300,13 @@ def process_download_job(job_id: str, url: str, format_id: str):
         job['message'] = "준비 완료! 기기로 전송을 시작합니다."
 
     except Exception as e:
-        job['status'] = 'error'
-        job['message'] = f"오류 발생: {str(e)}"
+        error_msg = str(e)
+        if "Sign in to confirm you're not a bot" in error_msg or "cookies" in error_msg.lower():
+            job['status'] = 'error'
+            job['message'] = "COOKIE_ERROR"
+        else:
+            job['status'] = 'error'
+            job['message'] = f"오류 발생: {error_msg}"
 
 @router.get("/download-file/{job_id}")
 @limiter.limit("5/minute")

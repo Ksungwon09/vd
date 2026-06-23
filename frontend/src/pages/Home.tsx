@@ -37,7 +37,12 @@ export function Home() {
       });
       setVideoInfo(res.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch video information');
+      if (err.response?.data?.detail === 'COOKIE_ERROR') {
+        setError('유튜브 봇 감지에 차단되었습니다. 상단의 설정 톱니바퀴를 눌러 쿠키를 갱신해주세요.');
+        window.dispatchEvent(new Event('open-cookie-modal'));
+      } else {
+        setError(err.response?.data?.detail || 'Failed to fetch video information');
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +75,12 @@ export function Home() {
       setActiveJob(res.data);
 
       if (res.data.status === 'error') {
-        setError(res.data.message);
+        if (res.data.message === 'COOKIE_ERROR') {
+          setError('유튜브 봇 감지에 차단되었습니다. 상단의 설정 톱니바퀴를 눌러 쿠키를 갱신해주세요.');
+          window.dispatchEvent(new Event('open-cookie-modal'));
+        } else {
+          setError(res.data.message);
+        }
         setTimeout(() => setActiveJob(null), 3000);
         return;
       }
