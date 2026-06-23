@@ -46,6 +46,7 @@ async def get_video_info(
             'no_warnings': True,
             'skip_download': True,
             'format': 'all',  # Prevent default format selection from failing
+            'remote_components': ['ejs:github'],
             'http_headers': {
                 'User-Agent': USER_AGENT
             }
@@ -249,6 +250,7 @@ def process_download_job(job_id: str, url: str, format_id: str, username: str):
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
+            'remote_components': ['ejs:github'],
             'http_headers': {'User-Agent': USER_AGENT}
         }
         if os.path.exists(cookie_file):
@@ -287,6 +289,7 @@ def process_download_job(job_id: str, url: str, format_id: str, username: str):
             'quiet': True,
             'no_warnings': True,
             'progress_hooks': [progress_hook],
+            'remote_components': ['ejs:github'],
             'http_headers': {'User-Agent': USER_AGENT}
         }
         if os.path.exists(cookie_file):
