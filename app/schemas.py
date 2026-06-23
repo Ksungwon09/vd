@@ -20,3 +20,9 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class UserUpdateStatus(BaseModel):
+    status: str
+
+class UserUpdateRole(BaseModel):
+    role: str

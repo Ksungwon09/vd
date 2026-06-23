@@ -2,10 +2,14 @@ import asyncio
 import sys
 import urllib.parse
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 import yt_dlp
 from app import models
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 from app.security import get_current_active_user, create_download_token, get_current_user_from_token_query
 
 router = APIRouter(prefix="/video", tags=["video"])
@@ -14,7 +18,9 @@ router = APIRouter(prefix="/video", tags=["video"])
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 @router.get("/info")
+@limiter.limit("10/minute")
 async def get_video_info(
+    request: Request,
     url: str = Query(..., description="The URL of the video"),
     current_user: models.User = Depends(get_current_active_user)
 ):
@@ -116,7 +122,9 @@ async def get_download_token(current_user: models.User = Depends(get_current_act
     return {"download_token": token}
 
 @router.get("/download")
+@limiter.limit("5/minute")
 async def download_video(
+    request: Request,
     token: str = Query(..., description="A short-lived download token"),
     url: str = Query(..., description="The URL of the video"),
     format_id: str = Query(..., description="The format ID to download"),

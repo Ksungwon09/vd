@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.database import engine, Base
 from app.routers import auth, admin, video
 
@@ -13,7 +16,10 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown
     await engine.dispose()
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Private V-Downloader", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
