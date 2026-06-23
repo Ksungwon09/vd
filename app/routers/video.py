@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import yt_dlp
 from app import models
-from app.security import get_current_active_user
+from app.security import get_current_active_user, create_download_token, get_current_user_from_token_query
 
 router = APIRouter(prefix="/video", tags=["video"])
 
@@ -14,9 +14,13 @@ router = APIRouter(prefix="/video", tags=["video"])
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 @router.get("/info")
-async def get_video_info(url: str = Query(..., description="The URL of the video")):
+async def get_video_info(
+    url: str = Query(..., description="The URL of the video"),
+    current_user: models.User = Depends(get_current_active_user)
+):
     """
     Extracts metadata for the given video URL, including title, thumbnail, and available formats.
+    Requires an authenticated and approved user.
     """
     def extract_info():
         ydl_opts = {
@@ -103,15 +107,24 @@ async def yt_dlp_stream_generator(url: str, format_id: str):
             except asyncio.TimeoutError:
                 process.kill()
 
+@router.get("/download-token")
+async def get_download_token(current_user: models.User = Depends(get_current_active_user)):
+    """
+    Generates a short-lived download token for an authenticated user.
+    """
+    token = create_download_token(current_user.username)
+    return {"download_token": token}
+
 @router.get("/download")
 async def download_video(
+    token: str = Query(..., description="A short-lived download token"),
     url: str = Query(..., description="The URL of the video"),
     format_id: str = Query(..., description="The format ID to download"),
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: models.User = Depends(get_current_user_from_token_query)
 ):
     """
     Downloads the video as a stream directly to the client.
-    Requires an authenticated and approved user.
+    Requires a valid short-lived download token.
     """
     # First, get the title to set the filename correctly
     def extract_title():
