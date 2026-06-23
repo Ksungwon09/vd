@@ -76,6 +76,9 @@ async def get_video_info(
     thumbnail = info.get('thumbnail', '')
     raw_formats = info.get('formats', [])
 
+    if not raw_formats:
+        raise HTTPException(status_code=403, detail="COOKIE_ERROR")
+
     video_formats = {}
     audio_formats = []
 
