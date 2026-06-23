@@ -8,3 +8,4 @@ pydantic-settings
 pyjwt
 pydantic
 python-multipart
+yt-dlp
