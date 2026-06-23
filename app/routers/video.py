@@ -45,7 +45,6 @@ async def get_video_info(
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
-            'ignoreerrors': True,
             'format': 'all',  # Prevent default format selection from failing
             'http_headers': {
                 'User-Agent': USER_AGENT
