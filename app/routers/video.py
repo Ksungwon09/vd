@@ -76,6 +76,10 @@ async def get_video_info(
     thumbnail = info.get('thumbnail', '')
     raw_formats = info.get('formats', [])
 
+    print(f"DEBUG: num raw_formats={len(raw_formats)}")
+    for f in raw_formats[:5]:
+        print(f"DEBUG: v={f.get('vcodec')} a={f.get('acodec')} h={f.get('height')}")
+
     if not raw_formats:
         raise HTTPException(status_code=403, detail="COOKIE_ERROR")
 
