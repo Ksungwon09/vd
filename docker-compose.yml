@@ -11,7 +11,7 @@ services:
       - "8000:8000"
     volumes:
       - ./downloads:/code/downloads
-      - ./data/cookies:/code/data/cookies
+      - ./data:/code/data
 
   frontend:
     build:
