@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "https://video.igise.kro.kr/auth/google/callback"
-    frontend_url: str = "https://video.igise.kro.kr:8080"
+    frontend_url: str = "https://video.igise.kro.kr"
 
     class Config:
         env_file = ".env"
