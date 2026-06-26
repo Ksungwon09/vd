@@ -8,7 +8,7 @@ pydantic-settings
 pyjwt
 pydantic
 python-multipart
-yt-dlp
+git+https://github.com/yt-dlp/yt-dlp.git@master
 slowapi
 cryptography
 httpx
