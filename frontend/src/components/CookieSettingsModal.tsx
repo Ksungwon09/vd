@@ -10,7 +10,6 @@ interface Props {
 }
 
 const CookieSettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaveSuccess }) => {
-  const { user } = useAuth();
   const [cookieContent, setCookieContent] = useState('');
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState('');

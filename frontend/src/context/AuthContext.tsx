@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import api, { setAccessToken, getAccessToken } from '@/api';
+import api, { setAccessToken } from '@/api';
 
 export interface User {
   id: number;

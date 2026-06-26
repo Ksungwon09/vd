@@ -1,4 +1,4 @@
-import { Download, Chrome } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export function Login() {
