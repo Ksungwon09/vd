@@ -7,11 +7,13 @@ services:
       dockerfile: Dockerfile
     container_name: vd_backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    env_file: .env
     volumes:
       - ./downloads:/code/downloads
       - ./data:/code/data
+    # 포트를 외부에 노출하지 않음 — Caddy가 내부 네트워크로 접근
+    expose:
+      - "8000"
 
   frontend:
     build:
@@ -19,7 +21,27 @@ services:
       dockerfile: Dockerfile
     container_name: vd_frontend
     restart: unless-stopped
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       - backend
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: vd_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  caddy_data:
+  caddy_config:

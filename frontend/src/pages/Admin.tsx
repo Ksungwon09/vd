@@ -74,7 +74,8 @@ export function Admin() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">ID</th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Username</th>
+                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">닉네임 / 이메일</th>
+                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">인증</th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Role</th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
                     <th className="relative py-3.5 pl-3 pr-4 sm:pr-6 text-right text-sm font-semibold text-gray-900">Actions</th>
@@ -87,7 +88,21 @@ export function Admin() {
                         {user.id}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {user.username}
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-900">
+                            {user.nickname || '(미설정)'}
+                          </span>
+                          <span className="text-xs text-gray-400">{user.username}</span>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          user.auth_provider === 'google'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {user.auth_provider === 'google' ? '🔵 Google' : '🔑 Local'}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${

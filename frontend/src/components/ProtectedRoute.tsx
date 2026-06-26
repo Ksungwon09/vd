@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -14,8 +15,8 @@ export function ProtectedRoute({ children, requireAdmin, requireApproved }: Prot
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
       </div>
     );
   }
@@ -24,17 +25,17 @@ export function ProtectedRoute({ children, requireAdmin, requireApproved }: Prot
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // 닉네임 미설정 → 닉네임 설정 페이지로 강제 이동
+  if (user.needs_nickname) {
+    return <Navigate to="/setup-nickname" replace />;
+  }
+
   if (requireAdmin && user.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
   if (requireApproved && user.status !== 'approved') {
-    return <Navigate to="/pending" replace />;
-  }
-
-  // If user is approved but trying to access pending, redirect to home
-  if (user.status === 'approved' && location.pathname === '/pending') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;

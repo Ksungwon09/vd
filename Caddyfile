@@ -1,3 +1,17 @@
 video.igise.kro.kr {
-    reverse_proxy frontend:80
+    # Google OAuth2 콜백 및 모든 /auth/* 요청 → 백엔드로 직접 전달
+    handle /auth/* {
+        reverse_proxy backend:8000
+    }
+
+    # 프론트엔드가 /api/* 로 보내는 API 요청 → /api 제거 후 백엔드로 전달
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy backend:8000
+    }
+
+    # 나머지 모든 요청 → 프론트엔드 (React SPA)
+    handle {
+        reverse_proxy frontend:80
+    }
 }

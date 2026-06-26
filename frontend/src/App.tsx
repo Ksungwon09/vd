@@ -3,19 +3,21 @@ import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Navbar } from './components/Navbar';
 import { Login } from './pages/Login';
-import { Register } from './pages/Register';
-import { Pending } from './pages/Pending';
 import { Admin } from './pages/Admin';
 import { Home } from './pages/Home';
+import { OAuthCallback } from './pages/OAuthCallback';
+import { NicknameSetup } from './pages/NicknameSetup';
 
 function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        {/* 인증 없이 접근 가능한 페이지 */}
+        <Route path="/login"          element={<Login />} />
+        <Route path="/auth/callback"  element={<OAuthCallback />} />
+        <Route path="/setup-nickname" element={<NicknameSetup />} />
 
-        {/* Protected Routes Wrapper with Navbar */}
+        {/* 인증 필요 + Navbar 포함 */}
         <Route
           path="/*"
           element={
@@ -23,14 +25,6 @@ function AppContent() {
               <Navbar />
               <main className="flex-grow">
                 <Routes>
-                  <Route
-                    path="/pending"
-                    element={
-                      <ProtectedRoute>
-                        <Pending />
-                      </ProtectedRoute>
-                    }
-                  />
                   <Route
                     path="/admin"
                     element={

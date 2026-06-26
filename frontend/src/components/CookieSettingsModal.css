@@ -37,6 +37,17 @@
   text-align: center;
 }
 
+.cookie-status-inactive {
+  background: rgba(251, 191, 36, 0.15);
+  color: #f59e0b;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+
 .cookie-textarea {
   width: 100%;
   background: #2a2a3c;
