@@ -1,0 +1,3 @@
+video.igise.kro.kr {
+    reverse_proxy frontend:80
+}
