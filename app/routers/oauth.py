@@ -130,6 +130,7 @@ async def google_callback(
         user = User(
             google_id     = google_id,
             username      = email,       # 이메일을 username으로 임시 사용
+            password_hash = "",          # 기존 DB의 NOT NULL 제약조건 우회용
             auth_provider = "google",
             role          = "user",
             status        = "approved",  # 구글 로그인 유저는 자동 승인
