@@ -16,8 +16,35 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address)
-from app.security import get_current_active_user, create_download_token, get_current_user_from_token_query
+from app.security import get_current_active_user, create_download_token, get_current_user_from_token_query, encrypt_cookie, decrypt_cookie
+import tempfile
+from contextlib import contextmanager
 
+@contextmanager
+def temporary_decrypted_cookie(username: str):
+    enc_file = os.path.join(COOKIES_DIR, f"{username}.enc")
+    if not os.path.exists(enc_file):
+        yield None
+        return
+    
+    try:
+        with open(enc_file, "rb") as f:
+            encrypted_content = f.read()
+        decrypted_content = decrypt_cookie(encrypted_content)
+    except Exception as e:
+        print(f"Failed to decrypt cookie for {username}: {e}")
+        yield None
+        return
+
+    fd, temp_path = tempfile.mkstemp(suffix=".txt")
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(decrypted_content)
+        
+    try:
+        yield temp_path
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 router = APIRouter(prefix="/video", tags=["video"])
 
 # Generic modern browser User-Agent to avoid basic IP bans
@@ -41,22 +68,22 @@ async def get_video_info(
     Requires an authenticated and approved user.
     """
     def extract_info():
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'format': 'all',  # Prevent default format selection from failing
-            'remote_components': ['ejs:github'],
-            'http_headers': {
-                'User-Agent': USER_AGENT
+        with temporary_decrypted_cookie(current_user.username) as cookie_file:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'format': 'all',  # Prevent default format selection from failing
+                'remote_components': ['ejs:github'],
+                'http_headers': {
+                    'User-Agent': USER_AGENT
+                }
             }
-        }
-        cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
-        if os.path.exists(cookie_file):
-            ydl_opts['cookiefile'] = cookie_file
+            if cookie_file:
+                ydl_opts['cookiefile'] = cookie_file
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
 
     try:
         info = await asyncio.to_thread(extract_info)
@@ -174,22 +201,33 @@ class CookieData(BaseModel):
 
 @router.post("/cookies")
 async def save_cookies(data: CookieData, current_user: models.User = Depends(get_current_active_user)):
-    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
-    with open(cookie_file, "w", encoding="utf-8") as f:
-        f.write(data.content)
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
+    encrypted_data = encrypt_cookie(data.content)
+    with open(cookie_file, "wb") as f:
+        f.write(encrypted_data)
+    
+    # Clean up old plain text cookie if it exists
+    old_cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    if os.path.exists(old_cookie_file):
+        os.remove(old_cookie_file)
+        
     return {"message": "Cookies saved successfully"}
 
 @router.delete("/cookies")
 async def delete_cookies(current_user: models.User = Depends(get_current_active_user)):
-    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
     if os.path.exists(cookie_file):
         os.remove(cookie_file)
+    old_cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    if os.path.exists(old_cookie_file):
+        os.remove(old_cookie_file)
     return {"message": "Cookies deleted successfully"}
 
 @router.get("/cookies/status")
 async def check_cookies_status(current_user: models.User = Depends(get_current_active_user)):
-    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
-    return {"has_cookies": os.path.exists(cookie_file)}
+    cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
+    old_cookie_file = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    return {"has_cookies": os.path.exists(cookie_file) or os.path.exists(old_cookie_file)}
 
 class JobStatus(BaseModel):
     id: str
@@ -243,67 +281,66 @@ def process_download_job(job_id: str, url: str, format_id: str, username: str):
         return
         
     try:
-        cookie_file = os.path.join(COOKIES_DIR, f"{username}.txt")
-        
-        # 1. Get title
-        ydl_opts_info = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'remote_components': ['ejs:github'],
-            'http_headers': {'User-Agent': USER_AGENT}
-        }
-        if os.path.exists(cookie_file):
-            ydl_opts_info['cookiefile'] = cookie_file
+        with temporary_decrypted_cookie(username) as cookie_file:
+            # 1. Get title
+            ydl_opts_info = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'remote_components': ['ejs:github'],
+                'http_headers': {'User-Agent': USER_AGENT}
+            }
+            if cookie_file:
+                ydl_opts_info['cookiefile'] = cookie_file
 
-        with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-            info = ydl.extract_info(url, download=False)
-            title = info.get('title', 'video')
+            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'video')
 
-        # 2. Setup progress hook
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                progress_str = d.get('_percent_str', '0%').strip()
-                progress_str = re.sub(r'\x1b\[[0-9;]*m', '', progress_str)
-                progress_str = progress_str.replace('%', '')
-                try:
-                    p = float(progress_str)
-                    job['progress'] = p
-                    job['status'] = 'downloading'
-                    job['message'] = f"서버로 다운로드 중... ({p:.1f}%)"
-                except ValueError:
-                    pass
-            elif d['status'] == 'finished':
-                job['progress'] = 100.0
-                job['status'] = 'merging'
-                job['message'] = "다운로드 완료! 고화질 병합 중 (시간이 소요될 수 있습니다)..."
+            # 2. Setup progress hook
+            def progress_hook(d):
+                if d['status'] == 'downloading':
+                    progress_str = d.get('_percent_str', '0%').strip()
+                    progress_str = re.sub(r'\x1b\[[0-9;]*m', '', progress_str)
+                    progress_str = progress_str.replace('%', '')
+                    try:
+                        p = float(progress_str)
+                        job['progress'] = p
+                        job['status'] = 'downloading'
+                        job['message'] = f"서버로 다운로드 중... ({p:.1f}%)"
+                    except ValueError:
+                        pass
+                elif d['status'] == 'finished':
+                    job['progress'] = 100.0
+                    job['status'] = 'merging'
+                    job['message'] = "다운로드 완료! 고화질 병합 중 (시간이 소요될 수 있습니다)..."
 
-        # Generate temp filename
-        temp_id = str(uuid.uuid4())
-        output_template = os.path.join(DOWNLOAD_DIR, f"{temp_id}.%(ext)s")
+            # Generate temp filename
+            temp_id = str(uuid.uuid4())
+            output_template = os.path.join(DOWNLOAD_DIR, f"{temp_id}.%(ext)s")
 
-        ydl_opts = {
-            'format': f"{format_id}+bestaudio/{format_id}",
-            'outtmpl': output_template,
-            'merge_output_format': 'mp4',
-            'quiet': True,
-            'no_warnings': True,
-            'progress_hooks': [progress_hook],
-            'remote_components': ['ejs:github'],
-            'http_headers': {'User-Agent': USER_AGENT}
-        }
-        if os.path.exists(cookie_file):
-            ydl_opts['cookiefile'] = cookie_file
+            ydl_opts = {
+                'format': f"{format_id}+bestaudio/{format_id}",
+                'outtmpl': output_template,
+                'merge_output_format': 'mp4',
+                'quiet': True,
+                'no_warnings': True,
+                'progress_hooks': [progress_hook],
+                'remote_components': ['ejs:github'],
+                'http_headers': {'User-Agent': USER_AGENT}
+            }
+            if cookie_file:
+                ydl_opts['cookiefile'] = cookie_file
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if 'requested_downloads' in info and len(info['requested_downloads']) > 0:
-                final_filepath = info['requested_downloads'][0]['filepath']
-            else:
-                final_filepath = ydl.prepare_filename(info)
-                
-        if not final_filepath or not os.path.exists(final_filepath):
-            raise Exception("Downloaded file could not be found.")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if 'requested_downloads' in info and len(info['requested_downloads']) > 0:
+                    final_filepath = info['requested_downloads'][0]['filepath']
+                else:
+                    final_filepath = ydl.prepare_filename(info)
+                    
+            if not final_filepath or not os.path.exists(final_filepath):
+                raise Exception("Downloaded file could not be found.")
 
         ext = os.path.splitext(final_filepath)[1].lstrip('.') or 'mp4'
         safe_title = "".join(c for c in title if c.isalnum() or c in " ._-").strip() or "download"
