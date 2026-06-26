@@ -112,6 +112,7 @@ async def get_video_info(
                 "no_warnings":  True,
                 "skip_download": True,
                 "format":       "all",
+                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
             }
             if cookie_file:
                 ydl_opts["cookiefile"] = cookie_file
@@ -352,6 +353,7 @@ def process_download_job(
                 "quiet":        True,
                 "no_warnings":  True,
                 "skip_download": True,
+                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
             }
             if cookie_file:
                 ydl_opts_info["cookiefile"] = cookie_file
@@ -388,6 +390,7 @@ def process_download_job(
                 "quiet":                True,
                 "no_warnings":          True,
                 "progress_hooks":       [progress_hook],
+                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
             }
             if cookie_file:
                 ydl_opts["cookiefile"] = cookie_file
