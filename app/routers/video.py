@@ -94,10 +94,9 @@ async def get_google_access_token(user: models.User) -> Optional[str]:
 
 
 def build_ydl_headers(google_token: Optional[str] = None) -> dict:
-    """yt-dlp HTTP 헤더 구성 (OAuth2 Bearer + User-Agent)."""
+    """yt-dlp HTTP 헤더 구성 (User-Agent만 유지, Bearer 토큰은 400 에러 유발하므로 제거)."""
     headers = {"User-Agent": USER_AGENT}
-    if google_token:
-        headers["Authorization"] = f"Bearer {google_token}"
+    # YouTube API는 일반 Google OAuth 토큰을 Bearer로 받을 경우 400 Bad Request를 반환합니다.
     return headers
 
 
