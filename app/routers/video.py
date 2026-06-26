@@ -93,13 +93,6 @@ async def get_google_access_token(user: models.User) -> Optional[str]:
     return None
 
 
-def build_ydl_headers(google_token: Optional[str] = None) -> dict:
-    """yt-dlp HTTP 헤더 구성 (User-Agent만 유지, Bearer 토큰은 400 에러 유발하므로 제거)."""
-    headers = {"User-Agent": USER_AGENT}
-    # YouTube API는 일반 Google OAuth 토큰을 Bearer로 받을 경우 400 Bad Request를 반환합니다.
-    return headers
-
-
 # ── 영상 정보 조회 ────────────────────────────────────────────────────────────
 
 @router.get("/info")
@@ -119,7 +112,6 @@ async def get_video_info(
                 "no_warnings":  True,
                 "skip_download": True,
                 "format":       "all",
-                "http_headers": build_ydl_headers(google_token),
             }
             if cookie_file:
                 ydl_opts["cookiefile"] = cookie_file
@@ -322,14 +314,11 @@ def process_download_job(
 
     try:
         with temporary_decrypted_cookie(username) as cookie_file:
-            headers = build_ydl_headers(google_token)
-
             # 1. 제목 조회
             ydl_opts_info = {
                 "quiet":        True,
                 "no_warnings":  True,
                 "skip_download": True,
-                "http_headers": headers,
             }
             if cookie_file:
                 ydl_opts_info["cookiefile"] = cookie_file
@@ -366,7 +355,6 @@ def process_download_job(
                 "quiet":                True,
                 "no_warnings":          True,
                 "progress_hooks":       [progress_hook],
-                "http_headers":         headers,
             }
             if cookie_file:
                 ydl_opts["cookiefile"] = cookie_file
