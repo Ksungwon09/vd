@@ -147,15 +147,34 @@ async def get_video_info(
         acodec = f.get("acodec")
         height = f.get("height")
 
+        # Audio-only format
         if vcodec == "none" and acodec != "none":
             audio_formats.append(f)
             continue
+            
+        # Fallback for missing vcodec/acodec but has resolution or height
+        if vcodec is None and acodec is None:
+            if f.get("resolution") == "audio only":
+                audio_formats.append(f)
+                continue
 
-        if vcodec != "none" and height:
+        # Video format
+        if vcodec != "none":
+            # If height is missing, try to parse from resolution (e.g. '1920x1080')
+            if not height and f.get("resolution") and "x" in f.get("resolution"):
+                try:
+                    height = int(f.get("resolution").split("x")[1])
+                except:
+                    pass
+            
+            # If we still don't have height, use a fallback based on format_note or just 0
+            if not height:
+                height = 0
+
             def score(fmt):
                 s = 0
                 if fmt.get("ext") == "mp4":  s += 100
-                vc = fmt.get("vcodec", "")
+                vc = fmt.get("vcodec", "") or ""
                 if vc.startswith("avc1"):    s += 50
                 elif vc.startswith("vp09"): s += 20
                 return s
@@ -164,31 +183,45 @@ async def get_video_info(
                 video_formats[height] = f
 
     formats = []
-    for h in sorted(video_formats.keys(), reverse=True):
-        vf = video_formats[h]
-        if   h >= 2160: label = f"4K 초고화질 ({h}p)"
-        elif h >= 1440: label = f"2K 고화질 ({h}p)"
-        elif h >= 1080: label = f"FHD 표준화질 ({h}p)"
-        elif h >= 720:  label = f"HD 일반화질 ({h}p)"
-        else:           label = f"SD 저화질 ({h}p)"
-
-        formats.append({
-            "format_id":   vf.get("format_id"),
-            "resolution":  label,
-            "ext":         "mp4",
-            "filesize":    vf.get("filesize") or vf.get("filesize_approx"),
-            "description": "영상과 소리가 포함된 파일입니다.",
-        })
-
-    if audio_formats:
-        best_audio = audio_formats[-1]
-        formats.append({
-            "format_id":   best_audio.get("format_id"),
-            "resolution":  "음원 전용 (최고 음질)",
-            "ext":         best_audio.get("ext", "m4a"),
-            "filesize":    best_audio.get("filesize") or best_audio.get("filesize_approx"),
-            "description": "화면 없이 소리만 추출합니다 (음악, 팟캐스트용).",
-        })
+    
+    # If our filtering somehow rejected everything but raw_formats has data,
+    # just dump a few raw formats so the user can download SOMETHING.
+    if not video_formats and not audio_formats and raw_formats:
+        for f in raw_formats[-3:]:
+            formats.append({
+                "format_id":   f.get("format_id"),
+                "resolution":  f.get("format_note") or f.get("resolution") or "Unknown",
+                "ext":         f.get("ext", "mp4"),
+                "filesize":    f.get("filesize") or f.get("filesize_approx"),
+                "description": "기본 제공 포맷",
+            })
+    else:
+        for h in sorted(video_formats.keys(), reverse=True):
+            vf = video_formats[h]
+            if   h >= 2160: label = f"4K 초고화질 ({h}p)"
+            elif h >= 1440: label = f"2K 고화질 ({h}p)"
+            elif h >= 1080: label = f"FHD 표준화질 ({h}p)"
+            elif h >= 720:  label = f"HD 일반화질 ({h}p)"
+            elif h > 0:     label = f"SD 저화질 ({h}p)"
+            else:           label = vf.get("format_note") or vf.get("resolution") or "알 수 없는 화질"
+    
+            formats.append({
+                "format_id":   vf.get("format_id"),
+                "resolution":  label,
+                "ext":         "mp4",
+                "filesize":    vf.get("filesize") or vf.get("filesize_approx"),
+                "description": "영상과 소리가 포함된 파일입니다.",
+            })
+    
+        if audio_formats:
+            best_audio = audio_formats[-1]
+            formats.append({
+                "format_id":   best_audio.get("format_id"),
+                "resolution":  "음원 전용 (최고 음질)",
+                "ext":         best_audio.get("ext", "m4a"),
+                "filesize":    best_audio.get("filesize") or best_audio.get("filesize_approx"),
+                "description": "화면 없이 소리만 추출합니다 (음악, 팟캐스트용).",
+            })
 
     return {"title": title, "thumbnail": thumbnail, "formats": formats}
 
