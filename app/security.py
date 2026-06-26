@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+from cryptography.fernet import Fernet
 from passlib.context import CryptContext
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -12,6 +13,13 @@ from app.models import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+fernet = Fernet(settings.cookie_encryption_key.encode())
+
+def encrypt_cookie(content: str) -> bytes:
+    return fernet.encrypt(content.encode('utf-8'))
+
+def decrypt_cookie(encrypted_content: bytes) -> str:
+    return fernet.decrypt(encrypted_content).decode('utf-8')
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
