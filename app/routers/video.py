@@ -24,8 +24,10 @@ from app.security import (
     encrypt_cookie,
     decrypt_cookie,
     decrypt_token,
+    has_legacy_cookies,
+    temporary_decrypted_cookie,
 )
-from app.routers.tv_auth import temporary_tv_cookie, has_tv_cookies
+from app.routers.tv_auth import get_valid_tv_token, get_tv_oauth_path, has_tv_oauth_token
 import tempfile
 from contextlib import contextmanager
 
@@ -68,30 +70,8 @@ def temporary_decrypted_cookie(username: str):
             os.remove(temp_path)
 
 
-# ── Google OAuth2 Access Token 갱신 ──────────────────────────────────────────
-
-async def get_google_access_token(user: models.User) -> Optional[str]:
-    """
-    DB에 저장된 암호화 refresh_token으로 Google access_token을 갱신합니다.
-    yt-dlp의 Authorization: Bearer 헤더에 사용됩니다.
-    """
-    if not user.google_refresh_token:
-        return None
-    try:
-        refresh_token = decrypt_token(user.google_refresh_token)
-        async with httpx.AsyncClient() as client:
-            resp = await client.post("https://oauth2.googleapis.com/token", data={
-                "client_id":     settings.google_client_id,
-                "client_secret": settings.google_client_secret,
-                "refresh_token": refresh_token,
-                "grant_type":    "refresh_token",
-            })
-        if resp.status_code == 200:
-            return resp.json().get("access_token")
-        print(f"Google token refresh 실패: {resp.text}")
-    except Exception as e:
-        print(f"Google token 갱신 오류: {e}")
-    return None
+def has_tv_oauth_token(user_id: int) -> bool:
+    return os.path.exists(get_tv_oauth_path(user_id))
 
 
 # ── 영상 정보 조회 ────────────────────────────────────────────────────────────
@@ -107,40 +87,35 @@ async def get_video_info(
 
     user_id      = current_user.id
     username     = current_user.username
-    # Google OAuth2 access_token → InnerTube API Bearer 인증 폴백
-    google_token = await get_google_access_token(current_user)
+    tv_oauth_token = await get_valid_tv_token(user_id)
 
     def extract_info():
-        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → 미인증 ──────────────────
-        with temporary_tv_cookie(user_id) as tv_cookie:
-            with temporary_decrypted_cookie(username) as legacy_cookie:
-                cookie_file = tv_cookie or legacy_cookie
+        # ── 인증 우선순위: TV OAuth → 레거시 쿠키 → 미인증 ──────────────────
+        with temporary_decrypted_cookie(username) as cookie_file:
+            # TV 클라이언트를 1순위로, 쿠키 있으면 tv/web, 없으면 mweb/web
+            if cookie_file:
+                player_clients = ["tv", "web", "mweb", "web_creator"]
+            else:
+                player_clients = ["mweb", "web", "web_creator"]
 
-                # TV 클라이언트를 1순위로, 쿠키 있으면 tv/web, 없으면 mweb/web
-                if cookie_file:
-                    player_clients = ["tv", "web", "mweb", "web_creator"]
-                else:
-                    player_clients = ["mweb", "web", "web_creator"]
+            ydl_opts = {
+                "quiet":         True,
+                "no_warnings":   True,
+                "skip_download": True,
+                "format":        "all",
+                "extractor_args": {
+                    "youtube": {"player_client": player_clients},
+                    "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
+                },
+                "remote_components": ["ejs:github"],
+            }
+            if cookie_file:
+                ydl_opts["cookiefile"] = cookie_file
+            if tv_oauth_token and not cookie_file:
+                ydl_opts["http_headers"] = {"Authorization": f"Bearer {tv_oauth_token}"}
 
-                ydl_opts = {
-                    "quiet":         True,
-                    "no_warnings":   True,
-                    "skip_download": True,
-                    "format":        "all",
-                    "extractor_args": {
-                        "youtube": {"player_client": player_clients},
-                        "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
-                    },
-                    "remote_components": ["ejs:github"],
-                }
-                if cookie_file:
-                    ydl_opts["cookiefile"] = cookie_file
-                # 쿠키 없이도 Bearer 토큰으로 YouTube InnerTube API 인증 시도
-                if google_token and not cookie_file:
-                    ydl_opts["http_headers"] = {"Authorization": f"Bearer {google_token}"}
-
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    return ydl.extract_info(url, download=False)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
 
     try:
         info = await asyncio.to_thread(extract_info)
@@ -293,13 +268,11 @@ async def delete_cookies(current_user: models.User = Depends(get_current_active_
 
 @router.get("/cookies/status")
 async def check_cookies_status(current_user: models.User = Depends(get_current_active_user)):
-    enc = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
-    txt = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
-    has_legacy_cookie = os.path.exists(enc) or os.path.exists(txt)
+    has_legacy_cookie = has_legacy_cookies(current_user.username)
     has_google_auth   = bool(current_user.google_refresh_token)
-    tv_cookies        = has_tv_cookies(current_user.id)
+    tv_oauth          = has_tv_oauth_token(current_user.id)
 
-    if tv_cookies:
+    if tv_oauth:
         auth_method = "tv_oauth"
     elif has_legacy_cookie:
         auth_method = "cookie"
@@ -309,7 +282,7 @@ async def check_cookies_status(current_user: models.User = Depends(get_current_a
     return {
         "has_cookies":     has_legacy_cookie,
         "has_google_auth": has_google_auth,
-        "has_tv_cookies":  tv_cookies,
+        "has_tv_oauth":    tv_oauth,
         "auth_method":     auth_method,
     }
 
@@ -337,8 +310,8 @@ async def prepare_download(
     current_user:     models.User = Depends(get_current_user_from_token_query),
 ):
     """백그라운드 다운로드 작업을 시작하고 job_id를 반환합니다."""
-    # 비동기 컨텍스트에서 미리 Google access_token 획득 (sync job에 전달)
-    google_token = await get_google_access_token(current_user)
+    # 비동기 컨텍스트에서 미리 TV OAuth 토큰 획득 (sync job에 전달)
+    tv_oauth_token = await get_valid_tv_token(current_user.id)
 
     job_id = str(uuid.uuid4())
     download_jobs[job_id] = {
@@ -354,7 +327,7 @@ async def prepare_download(
         job_id, url, format_id,
         current_user.username,
         current_user.id,      # TV 쿠키 조회용 user_id
-        google_token,         # Bearer 인증 폴백용 access_token
+        tv_oauth_token,       # Bearer 인증 폴백용 access_token
     )
     return {"job_id": job_id}
 
@@ -376,7 +349,7 @@ def process_download_job(
     format_id:    str,
     username:     str,
     user_id:      int,
-    google_token: Optional[str] = None,
+    tv_oauth_token: Optional[str] = None,
 ):
     """동기 백그라운드 작업: yt-dlp로 영상 다운로드."""
     job = download_jobs.get(job_id)
@@ -384,43 +357,40 @@ def process_download_job(
         return
 
     try:
-        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → Bearer 토큰 → 미인증 ─────
-        with temporary_tv_cookie(user_id) as tv_cookie:
-            with temporary_decrypted_cookie(username) as legacy_cookie:
-                cookie_file = tv_cookie or legacy_cookie
+        # ── 인증 우선순위: TV OAuth → 레거시 쿠키 → 미인증 ─────
+        with temporary_decrypted_cookie(username) as cookie_file:
+            # TV 클라이언트 우선, 쿠키 있을 때 tv 포함
+            if cookie_file:
+                player_clients = ["tv", "web", "mweb", "web_creator"]
+            else:
+                player_clients = ["mweb", "web", "web_creator"]
 
-                # TV 클라이언트 우선, 쿠키 있을 때 tv 포함
-                if cookie_file:
-                    player_clients = ["tv", "web", "mweb", "web_creator"]
-                else:
-                    player_clients = ["mweb", "web", "web_creator"]
+            base_extractor_args = {
+                "youtube": {"player_client": player_clients},
+                "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
+            }
 
-                base_extractor_args = {
-                    "youtube": {"player_client": player_clients},
-                    "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
-                }
+            # 공통 http_headers: 쿠키 없으면 Bearer 토큰으로 InnerTube API 인증 시도
+            common_headers: Optional[dict] = None
+            if tv_oauth_token and not cookie_file:
+                common_headers = {"Authorization": f"Bearer {tv_oauth_token}"}
 
-                # 공통 http_headers: 쿠키 없으면 Bearer 토큰으로 InnerTube API 인증 시도
-                common_headers: Optional[dict] = None
-                if google_token and not cookie_file:
-                    common_headers = {"Authorization": f"Bearer {google_token}"}
+            # 1. 제목 조회
+            ydl_opts_info = {
+                "quiet":         True,
+                "no_warnings":   True,
+                "skip_download": True,
+                "extractor_args": base_extractor_args,
+                "remote_components": ["ejs:github"],
+            }
+            if cookie_file:
+                ydl_opts_info["cookiefile"] = cookie_file
+            if common_headers:
+                ydl_opts_info["http_headers"] = common_headers
 
-                # 1. 제목 조회
-                ydl_opts_info = {
-                    "quiet":         True,
-                    "no_warnings":   True,
-                    "skip_download": True,
-                    "extractor_args": base_extractor_args,
-                    "remote_components": ["ejs:github"],
-                }
-                if cookie_file:
-                    ydl_opts_info["cookiefile"] = cookie_file
-                if common_headers:
-                    ydl_opts_info["http_headers"] = common_headers
-
-                with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                    info  = ydl.extract_info(url, download=False)
-                    title = info.get("title", "video")
+            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+                info  = ydl.extract_info(url, download=False)
+                title = info.get("title", "video")
 
                 # 2. 진행률 훅
                 def progress_hook(d):

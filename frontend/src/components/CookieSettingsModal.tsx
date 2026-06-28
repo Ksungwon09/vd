@@ -43,26 +43,44 @@ const CookieSettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaveSuccess }
     }
   };
 
-  // ── TV 인증: Google OAuth2 토큰으로 YouTube 쿠키 자동 획득 ────────────────
-  const handleFetchTvCookies = async () => {
+  const [deviceCodeData, setDeviceCodeData] = useState<{
+    user_code: string;
+    verification_url: string;
+    device_code: string;
+    interval: number;
+  } | null>(null);
+
+  // ── TV 인증: YouTube TV 기기 연동 흐름 ──────────────────────────────────────
+  const handleRequestDeviceCode = async () => {
     setTvLoading(true);
     setTvError('');
     setTvSuccess('');
+    setDeviceCodeData(null);
     try {
-      const res = await api.post('/video/tv-auth/fetch');
-      const d = res.data;
-      const ytCookies = d.youtube_cookies?.join(', ') || '-';
-      const gCookies  = d.google_cookies?.join(', ')  || '-';
-      setTvSuccess(
-        `${d.message}\n\n` +
-        `YouTube 쿠키: ${ytCookies}\n` +
-        `Google 쿠키: ${gCookies}`
-      );
-      await checkStatus();
-      onSaveSuccess();
+      const res = await api.post('/tv-auth/device/code');
+      setDeviceCodeData(res.data);
+      pollDeviceCode(res.data.device_code, res.data.interval);
     } catch (err: any) {
-      setTvError(err.response?.data?.detail || 'TV 인증 쿠키 획득에 실패했습니다.');
-    } finally {
+      setTvError(err.response?.data?.detail || '기기 코드 발급에 실패했습니다.');
+      setTvLoading(false);
+    }
+  };
+
+  const pollDeviceCode = async (device_code: string, interval: number) => {
+    try {
+      const res = await api.post('/tv-auth/device/poll', { device_code });
+      if (res.data.status === 'pending') {
+        setTimeout(() => pollDeviceCode(device_code, interval), interval * 1000);
+      } else if (res.data.status === 'success') {
+        setTvSuccess('✅ TV 인증이 완료되었습니다! 이제 고화질 다운로드가 가능합니다.');
+        setDeviceCodeData(null);
+        setTvLoading(false);
+        await checkStatus();
+        onSaveSuccess();
+      }
+    } catch (err: any) {
+      setTvError(err.response?.data?.detail || '인증 중 오류가 발생했습니다.');
+      setDeviceCodeData(null);
       setTvLoading(false);
     }
   };
@@ -71,11 +89,11 @@ const CookieSettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaveSuccess }
     setTvLoading(true);
     setTvError('');
     try {
-      await api.delete('/video/tv-auth');
-      setTvSuccess('TV 인증 쿠키가 삭제되었습니다.');
+      await api.delete('/tv-auth');
+      setTvSuccess('TV 연동이 해제되었습니다.');
       await checkStatus();
     } catch {
-      setTvError('쿠키 삭제에 실패했습니다.');
+      setTvError('연동 해제에 실패했습니다.');
     } finally {
       setTvLoading(false);
     }
@@ -175,36 +193,51 @@ const CookieSettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaveSuccess }
               </div>
             )}
 
-            {status?.has_tv_cookies && (
+            {status?.has_tv_oauth && !deviceCodeData && (
               <div className="tv-auth-status status--ok">
-                ✅ YouTube TV 인증 쿠키가 저장되어 있습니다. 다운로드에 자동 사용됩니다.
+                ✅ YouTube TV 인증이 완료되어 있습니다. 다운로드에 자동 사용됩니다.
               </div>
             )}
 
             {tvError && <div className="cookie-error">{tvError}</div>}
             {tvSuccess && <div className="cookie-success" style={{ whiteSpace: 'pre-line' }}>{tvSuccess}</div>}
 
-            <div className="cookie-modal-actions">
-              {status?.has_tv_cookies && (
+            {deviceCodeData ? (
+              <div className="device-code-container" style={{ textAlign: 'center', padding: '20px', background: 'var(--bg-secondary)', borderRadius: '8px', margin: '20px 0' }}>
+                <p>다음 링크로 이동하여 아래 코드를 입력하세요:</p>
+                <a href={deviceCodeData.verification_url} target="_blank" rel="noreferrer" style={{ fontSize: '1.2em', color: 'var(--primary-color)', display: 'block', margin: '10px 0' }}>
+                  {deviceCodeData.verification_url}
+                </a>
+                <div style={{ fontSize: '2em', fontWeight: 'bold', letterSpacing: '2px', padding: '10px', background: '#000', color: '#fff', borderRadius: '4px', display: 'inline-block' }}>
+                  {deviceCodeData.user_code}
+                </div>
+                <p style={{ marginTop: '15px', color: 'var(--text-secondary)' }}>
+                  ⏳ 인증 완료를 기다리는 중입니다...
+                </p>
+              </div>
+            ) : (
+              <div className="cookie-modal-actions">
+                {status?.has_tv_oauth && (
+                  <button
+                    className="cookie-btn-delete"
+                    onClick={handleDeleteTvCookies}
+                    disabled={tvLoading}
+                  >
+                    연동 해제
+                  </button>
+                )}
+                <button className="cookie-btn-cancel" onClick={onClose} disabled={tvLoading}>
+                  닫기
+                </button>
                 <button
-                  className="cookie-btn-delete"
-                  onClick={handleDeleteTvCookies}
+                  className="cookie-btn-save"
+                  onClick={handleRequestDeviceCode}
                   disabled={tvLoading}
                 >
-                  쿠키 삭제
+                  {tvLoading ? '요청 중...' : status?.has_tv_oauth ? '인증 갱신' : 'YouTube 기기 연동하기'}
                 </button>
-              )}
-              <button className="cookie-btn-cancel" onClick={onClose} disabled={tvLoading}>
-                닫기
-              </button>
-              <button
-                className="cookie-btn-save"
-                onClick={handleFetchTvCookies}
-                disabled={tvLoading || !status?.has_google_auth}
-              >
-                {tvLoading ? '인증 중...' : status?.has_tv_cookies ? '쿠키 갱신' : 'YouTube 인증하기'}
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         )}
 
