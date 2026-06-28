@@ -24,8 +24,6 @@ from app.security import (
     encrypt_cookie,
     decrypt_cookie,
     decrypt_token,
-    has_legacy_cookies,
-    temporary_decrypted_cookie,
 )
 from app.routers.tv_auth import get_valid_tv_token, get_tv_oauth_path, has_tv_oauth_token
 import tempfile
