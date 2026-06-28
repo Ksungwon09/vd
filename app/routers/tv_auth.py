@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app import models
-from app.dependencies import get_current_active_user
+from app.security import get_current_active_user
 from app.config import settings
 
 # 암호화는 기본적으로 안해도 됨. 하지만 일관성을 위해 security.py의 encrypt/decrypt 활용 가능
