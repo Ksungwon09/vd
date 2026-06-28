@@ -25,3 +25,10 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    container_name: vd_pot_provider
+    restart: unless-stopped
+    expose:
+      - "4416"

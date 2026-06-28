@@ -13,7 +13,8 @@ from slowapi.errors import RateLimitExceeded
 
 from app.database import engine, Base
 from app.routers import auth, admin, video
-from app.routers import oauth  # Google OAuth2
+from app.routers import oauth   # Google OAuth2
+from app.routers import tv_auth  # YouTube TV 인증 쿠키
 
 
 @asynccontextmanager
@@ -44,10 +45,11 @@ app.add_middleware(
 )
 
 # oauth 라우터를 auth보다 먼저 등록 (prefix 충돌 방지)
-app.include_router(oauth.router)   # /auth/google/*, /auth/refresh, /auth/logout, /auth/me
-app.include_router(auth.router)    # /auth/login (로컬 로그인)
+app.include_router(oauth.router)    # /auth/google/*, /auth/refresh, /auth/logout, /auth/me
+app.include_router(auth.router)     # /auth/login (로컬 로그인)
 app.include_router(admin.router)
 app.include_router(video.router)
+app.include_router(tv_auth.router)  # /video/tv-auth/*
 
 
 @app.get("/")

@@ -13,3 +13,4 @@ slowapi
 cryptography
 httpx
 itsdangerous
+bgutil-ytdlp-pot-provider  

@@ -1,120 +1,286 @@
+/* ── 오버레이 ── */
 .cookie-modal-overlay {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
   display: flex;
-  justify-content: center;
   align-items: center;
-  z-index: 2000;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  backdrop-filter: blur(2px);
 }
 
 .cookie-modal-content {
-  background: #1e1e2d;
-  color: #fff;
-  padding: 30px;
+  background: #fff;
   border-radius: 16px;
-  width: 90%;
-  max-width: 500px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  animation: slideIn 0.3s ease-out;
+  padding: 28px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
-.cookie-modal-desc {
-  font-size: 0.9rem;
-  color: #a0a0b0;
+/* ── 헤더 ── */
+.cookie-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 20px;
-  line-height: 1.5;
+  flex-wrap: wrap;
 }
 
+.cookie-modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+/* ── 인증 배지 ── */
+.auth-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.auth-badge--tv {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.auth-badge--cookie {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.auth-badge--none {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+/* ── 탭 ── */
+.cookie-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0;
+}
+
+.cookie-tab {
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  border-radius: 0;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cookie-tab:hover {
+  color: #2563eb;
+}
+
+.cookie-tab--active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+.cookie-tab-badge {
+  font-size: 0.65rem;
+  background: #2563eb;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* ── 탭 패널 ── */
+.cookie-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── TV 인증 설명 ── */
+.tv-auth-desc {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 0.875rem;
+  color: #14532d;
+}
+
+.tv-auth-desc p {
+  margin: 0 0 8px;
+}
+
+.tv-auth-desc ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
+.tv-auth-desc code {
+  background: #dcfce7;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+/* ── 상태 배너 ── */
+.tv-auth-status {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status--ok {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.status--warn {
+  background: #fef9c3;
+  border: 1px solid #fde047;
+  color: #854d0e;
+}
+
+/* ── 기존 쿠키 상태 ── */
 .cookie-status-active {
-  background: rgba(40, 167, 69, 0.2);
-  color: #28a745;
-  padding: 10px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  padding: 10px 14px;
   border-radius: 8px;
-  margin-bottom: 15px;
-  font-size: 0.9rem;
-  text-align: center;
+  font-size: 0.875rem;
 }
 
-.cookie-status-inactive {
-  background: rgba(251, 191, 36, 0.15);
-  color: #f59e0b;
-  padding: 10px;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  font-size: 0.9rem;
-  text-align: center;
-}
-
-
+/* ── Textarea ── */
 .cookie-textarea {
   width: 100%;
-  background: #2a2a3c;
-  border: 1px solid #3a3a4c;
+  padding: 10px 12px;
+  border: 1.5px solid #d1d5db;
   border-radius: 8px;
-  color: #fff;
-  padding: 12px;
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   resize: vertical;
-  margin-bottom: 15px;
+  color: #374151;
+  background: #f9fafb;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
 }
 
 .cookie-textarea:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: #2563eb;
+  background: #fff;
 }
 
+/* ── 설명 ── */
+.cookie-modal-desc {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── 에러/성공 ── */
 .cookie-error {
-  color: #ff4757;
-  font-size: 0.9rem;
-  margin-bottom: 15px;
-  text-align: center;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
 }
 
+.cookie-success {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+/* ── 버튼 ── */
 .cookie-modal-actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
-  gap: 10px;
-}
-
-.cookie-btn-cancel, .cookie-btn-save, .cookie-btn-delete {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cookie-btn-cancel {
-  background: #3a3a4c;
-  color: #fff;
-}
-.cookie-btn-cancel:hover {
-  background: #4a4a5c;
+  flex-wrap: wrap;
+  margin-top: 4px;
 }
 
 .cookie-btn-save {
-  background: #6366f1;
+  padding: 9px 20px;
+  background: #2563eb;
   color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.cookie-btn-save:hover {
-  background: #4f46e5;
+
+.cookie-btn-save:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.cookie-btn-save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cookie-btn-cancel {
+  padding: 9px 20px;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cookie-btn-cancel:hover:not(:disabled) {
+  background: #e5e7eb;
 }
 
 .cookie-btn-delete {
-  background: transparent;
-  color: #ff4757;
-  border: 1px solid #ff4757;
-  margin-right: auto;
-}
-.cookie-btn-delete:hover {
-  background: rgba(255, 71, 87, 0.1);
+  padding: 9px 16px;
+  background: #fff;
+  color: #dc2626;
+  border: 1.5px solid #fca5a5;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
+.cookie-btn-delete:hover:not(:disabled) {
+  background: #fef2f2;
 }

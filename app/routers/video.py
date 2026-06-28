@@ -1,7 +1,7 @@
 import asyncio
 import os
+import shutil
 import uuid
-import subprocess
 import urllib.parse
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, BackgroundTasks
@@ -25,6 +25,7 @@ from app.security import (
     decrypt_cookie,
     decrypt_token,
 )
+from app.routers.tv_auth import temporary_tv_cookie, has_tv_cookies
 import tempfile
 from contextlib import contextmanager
 
@@ -103,21 +104,38 @@ async def get_video_info(
     current_user: models.User = Depends(get_current_active_user),
 ):
     """영상 메타데이터(제목, 썸네일, 포맷 목록) 조회."""
-    google_token = await get_google_access_token(current_user)
+
+    user_id  = current_user.id
+    username = current_user.username
 
     def extract_info():
-        with temporary_decrypted_cookie(current_user.username) as cookie_file:
-            ydl_opts = {
-                "quiet":        True,
-                "no_warnings":  True,
-                "skip_download": True,
-                "format":       "all",
-                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
-            }
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=False)
+        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → 미인증 ──────────────────
+        with temporary_tv_cookie(user_id) as tv_cookie:
+            with temporary_decrypted_cookie(username) as legacy_cookie:
+                cookie_file = tv_cookie or legacy_cookie
+
+                # TV 클라이언트를 1순위로, 쿠키 있으면 tv/web, 없으면 mweb/web
+                if cookie_file:
+                    player_clients = ["tv", "web", "mweb", "web_creator"]
+                else:
+                    player_clients = ["mweb", "web", "web_creator"]
+
+                ydl_opts = {
+                    "quiet":         True,
+                    "no_warnings":   True,
+                    "skip_download": True,
+                    "format":        "all",
+                    "extractor_args": {
+                        "youtube": {"player_client": player_clients},
+                        "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
+                    },
+                    "remote_components": ["ejs:github"],
+                }
+                if cookie_file:
+                    ydl_opts["cookiefile"] = cookie_file
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
 
     try:
         info = await asyncio.to_thread(extract_info)
@@ -272,10 +290,22 @@ async def delete_cookies(current_user: models.User = Depends(get_current_active_
 async def check_cookies_status(current_user: models.User = Depends(get_current_active_user)):
     enc = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
     txt = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
-    has_google_auth = bool(current_user.google_refresh_token)
+    has_legacy_cookie = os.path.exists(enc) or os.path.exists(txt)
+    has_google_auth   = bool(current_user.google_refresh_token)
+    tv_cookies        = has_tv_cookies(current_user.id)
+
+    if tv_cookies:
+        auth_method = "tv_oauth"
+    elif has_legacy_cookie:
+        auth_method = "cookie"
+    else:
+        auth_method = "none"
+
     return {
-        "has_cookies":    os.path.exists(enc) or os.path.exists(txt),
+        "has_cookies":     has_legacy_cookie,
         "has_google_auth": has_google_auth,
+        "has_tv_cookies":  tv_cookies,
+        "auth_method":     auth_method,
     }
 
 
@@ -302,9 +332,6 @@ async def prepare_download(
     current_user:     models.User = Depends(get_current_user_from_token_query),
 ):
     """백그라운드 다운로드 작업을 시작하고 job_id를 반환합니다."""
-    # 동기 작업에서 사용할 수 있도록 미리 Google access_token 획득
-    google_token = await get_google_access_token(current_user)
-
     job_id = str(uuid.uuid4())
     download_jobs[job_id] = {
         "id":       job_id,
@@ -318,7 +345,7 @@ async def prepare_download(
         process_download_job,
         job_id, url, format_id,
         current_user.username,
-        google_token,
+        current_user.id,   # TV 쿠키 조회용 user_id 추가
     )
     return {"job_id": job_id}
 
@@ -335,11 +362,11 @@ async def get_job_status(
 
 
 def process_download_job(
-    job_id:       str,
-    url:          str,
-    format_id:    str,
-    username:     str,
-    google_token: Optional[str] = None,
+    job_id:   str,
+    url:      str,
+    format_id: str,
+    username: str,
+    user_id:  int,
 ):
     """동기 백그라운드 작업: yt-dlp로 영상 다운로드."""
     job = download_jobs.get(job_id)
@@ -347,77 +374,95 @@ def process_download_job(
         return
 
     try:
-        with temporary_decrypted_cookie(username) as cookie_file:
-            # 1. 제목 조회
-            ydl_opts_info = {
-                "quiet":        True,
-                "no_warnings":  True,
-                "skip_download": True,
-                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
-            }
-            if cookie_file:
-                ydl_opts_info["cookiefile"] = cookie_file
+        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → 미인증 ──────────────────
+        with temporary_tv_cookie(user_id) as tv_cookie:
+            with temporary_decrypted_cookie(username) as legacy_cookie:
+                cookie_file = tv_cookie or legacy_cookie
 
-            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                info  = ydl.extract_info(url, download=False)
-                title = info.get("title", "video")
-
-            # 2. 진행률 훅
-            def progress_hook(d):
-                if d["status"] == "downloading":
-                    raw = d.get("_percent_str", "0%").strip()
-                    raw = re.sub(r"\x1b\[[0-9;]*m", "", raw).replace("%", "")
-                    try:
-                        p = float(raw)
-                        job["progress"] = p
-                        job["status"]   = "downloading"
-                        job["message"]  = f"서버로 다운로드 중... ({p:.1f}%)"
-                    except ValueError:
-                        pass
-                elif d["status"] == "finished":
-                    job["progress"] = 100.0
-                    job["status"]   = "merging"
-                    job["message"]  = "다운로드 완료! 고화질 병합 중..."
-
-            # 3. 다운로드
-            temp_id         = str(uuid.uuid4())
-            output_template = os.path.join(DOWNLOAD_DIR, f"{temp_id}.%(ext)s")
-
-            ydl_opts = {
-                "format":               f"{format_id}+bestaudio/{format_id}",
-                "outtmpl":              output_template,
-                "merge_output_format":  "mp4",
-                "quiet":                True,
-                "no_warnings":          True,
-                "progress_hooks":       [progress_hook],
-                "extractor_args": {"youtube": {"player_client": ["android", "web", "ios"]}},
-            }
-            if cookie_file:
-                ydl_opts["cookiefile"] = cookie_file
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                dl_info = ydl.extract_info(url, download=True)
-                if "requested_downloads" in dl_info and dl_info["requested_downloads"]:
-                    final_filepath = dl_info["requested_downloads"][0]["filepath"]
+                # TV 클라이언트 우선, 쿠키 있을 때 tv 포함
+                if cookie_file:
+                    player_clients = ["tv", "web", "mweb", "web_creator"]
                 else:
-                    final_filepath = ydl.prepare_filename(dl_info)
+                    player_clients = ["mweb", "web", "web_creator"]
 
-        if not final_filepath or not os.path.exists(final_filepath):
-            raise Exception("다운로드된 파일을 찾을 수 없습니다.")
+                base_extractor_args = {
+                    "youtube": {"player_client": player_clients},
+                    "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
+                }
 
-        ext          = os.path.splitext(final_filepath)[1].lstrip(".") or "mp4"
-        safe_title   = "".join(c for c in title if c.isalnum() or c in " ._-").strip() or "download"
-        client_filename = f"{safe_title}.{ext}"
+                # 1. 제목 조회
+                ydl_opts_info = {
+                    "quiet":         True,
+                    "no_warnings":   True,
+                    "skip_download": True,
+                    "extractor_args": base_extractor_args,
+                    "remote_components": ["ejs:github"],
+                }
+                if cookie_file:
+                    ydl_opts_info["cookiefile"] = cookie_file
 
-        job["filepath"] = final_filepath
-        job["filename"] = client_filename
-        job["status"]   = "ready"
-        job["message"]  = "준비 완료! 기기로 전송을 시작합니다."
+                with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+                    info  = ydl.extract_info(url, download=False)
+                    title = info.get("title", "video")
+
+                # 2. 진행률 훅
+                def progress_hook(d):
+                    if d["status"] == "downloading":
+                        raw = d.get("_percent_str", "0%").strip()
+                        raw = re.sub(r"\x1b\[[0-9;]*m", "", raw).replace("%", "")
+                        try:
+                            p = float(raw)
+                            job["progress"] = p
+                            job["status"]   = "downloading"
+                            job["message"]  = f"서버로 다운로드 중... ({p:.1f}%)"
+                        except ValueError:
+                            pass
+                    elif d["status"] == "finished":
+                        job["progress"] = 100.0
+                        job["status"]   = "merging"
+                        job["message"]  = "다운로드 완료! 고화질 병합 중..."
+
+                # 3. 다운로드
+                temp_id         = str(uuid.uuid4())
+                output_template = os.path.join(DOWNLOAD_DIR, f"{temp_id}.%(ext)s")
+
+                ydl_opts = {
+                    "format":              f"{format_id}+bestaudio/{format_id}",
+                    "outtmpl":             output_template,
+                    "merge_output_format": "mp4",
+                    "quiet":               True,
+                    "no_warnings":         True,
+                    "progress_hooks":      [progress_hook],
+                    "extractor_args":      base_extractor_args,
+                    "remote_components":   ["ejs:github"],
+                }
+                if cookie_file:
+                    ydl_opts["cookiefile"] = cookie_file
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    dl_info = ydl.extract_info(url, download=True)
+                    if "requested_downloads" in dl_info and dl_info["requested_downloads"]:
+                        final_filepath = dl_info["requested_downloads"][0]["filepath"]
+                    else:
+                        final_filepath = ydl.prepare_filename(dl_info)
+
+                if not final_filepath or not os.path.exists(final_filepath):
+                    raise Exception("다운로드된 파일을 찾을 수 없습니다.")
+
+                ext             = os.path.splitext(final_filepath)[1].lstrip(".") or "mp4"
+                safe_title      = "".join(c for c in title if c.isalnum() or c in " ._-").strip() or "download"
+                client_filename = f"{safe_title}.{ext}"
+
+                job["filepath"] = final_filepath
+                job["filename"] = client_filename
+                job["status"]   = "ready"
+                job["message"]  = "준비 완료! 기기로 전송을 시작합니다."
 
     except Exception as e:
         error_msg = str(e)
         is_cookie_error = any(kw in error_msg for kw in [
-            "Sign in to confirm", "cookies", "Requested format is not available"
+            "Sign in to confirm", "cookies", "Requested format is not available",
+            "LOGIN_REQUIRED", "This video is only available",
         ])
         job["status"]  = "error"
         job["message"] = "COOKIE_ERROR" if is_cookie_error else f"오류 발생: {error_msg}"
