@@ -25,7 +25,7 @@ from app.security import (
     decrypt_cookie,
     decrypt_token,
 )
-from app.routers.tv_auth import get_valid_tv_token, get_tv_oauth_path, has_tv_oauth_token
+from app.routers.tv_auth import get_valid_tv_token, get_tv_oauth_path
 import tempfile
 from contextlib import contextmanager
 
