@@ -106,7 +106,7 @@ async def poll_device_token(req: PollRequest, current_user: models.User = Depend
 
 
 # video.py 등에서 내부적으로 호출할 토큰 조회/갱신 함수
-async def get_valid_tv_token(user_id: int) -> Optional[str]:
+async def get_valid_tv_token(user_id: int) -> Optional[dict]:
     path = get_tv_oauth_path(user_id)
     if not os.path.exists(path):
         return None
@@ -142,7 +142,7 @@ async def get_valid_tv_token(user_id: int) -> Optional[str]:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(encrypted_new)
                     
-        return token_data['access_token']
+        return token_data
     except Exception:
         return None
 

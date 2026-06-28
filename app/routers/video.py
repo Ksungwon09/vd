@@ -109,11 +109,23 @@ async def get_video_info(
             }
             if cookie_file:
                 ydl_opts["cookiefile"] = cookie_file
-            if tv_oauth_token and not cookie_file:
-                ydl_opts["http_headers"] = {"Authorization": f"Bearer {tv_oauth_token}"}
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=False)
+            if tv_oauth_token and not cookie_file:
+                import tempfile
+                import shutil
+                temp_cache = tempfile.mkdtemp()
+                ydl_opts["cachedir"] = temp_cache
+                ydl_opts["username"] = "oauth2"
+                ydl_opts["password"] = ""
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.cache.store("youtube-oauth2", "youtube", tv_oauth_token)
+                        return ydl.extract_info(url, download=False)
+                finally:
+                    shutil.rmtree(temp_cache, ignore_errors=True)
+            else:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
 
     try:
         info = await asyncio.to_thread(extract_info)
@@ -349,7 +361,7 @@ def process_download_job(
     format_id:    str,
     username:     str,
     user_id:      int,
-    tv_oauth_token: Optional[str] = None,
+    tv_oauth_token: Optional[dict] = None,
 ):
     """동기 백그라운드 작업: yt-dlp로 영상 다운로드."""
     job = download_jobs.get(job_id)
@@ -370,11 +382,6 @@ def process_download_job(
                 "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
             }
 
-            # 공통 http_headers: 쿠키 없으면 Bearer 토큰으로 InnerTube API 인증 시도
-            common_headers: Optional[dict] = None
-            if tv_oauth_token and not cookie_file:
-                common_headers = {"Authorization": f"Bearer {tv_oauth_token}"}
-
             # 1. 제목 조회
             ydl_opts_info = {
                 "quiet":         True,
@@ -385,12 +392,21 @@ def process_download_job(
             }
             if cookie_file:
                 ydl_opts_info["cookiefile"] = cookie_file
-            if common_headers:
-                ydl_opts_info["http_headers"] = common_headers
 
-            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                info  = ydl.extract_info(url, download=False)
-                title = info.get("title", "video")
+            temp_cache_dir = None
+            if tv_oauth_token and not cookie_file:
+                import tempfile
+                temp_cache_dir = tempfile.mkdtemp()
+                ydl_opts_info["cachedir"] = temp_cache_dir
+                ydl_opts_info["username"] = "oauth2"
+                ydl_opts_info["password"] = ""
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+                    if tv_oauth_token and not cookie_file:
+                        ydl.cache.store("youtube-oauth2", "youtube", tv_oauth_token)
+                    info  = ydl.extract_info(url, download=False)
+                    title = info.get("title", "video")
 
                 # 2. 진행률 훅
                 def progress_hook(d):
@@ -424,11 +440,15 @@ def process_download_job(
                     "remote_components":   ["ejs:github"],
                 }
                 if cookie_file:
-                    ydl_opts["cookiefile"] = cookie_file
-                if common_headers:
-                    ydl_opts["http_headers"] = common_headers
+                    ydl_opts_dl["cookiefile"] = cookie_file
+                if temp_cache_dir:
+                    ydl_opts_dl["cachedir"] = temp_cache_dir
+                    ydl_opts_dl["username"] = "oauth2"
+                    ydl_opts_dl["password"] = ""
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl:
+                    if temp_cache_dir:
+                        ydl.cache.store("youtube-oauth2", "youtube", tv_oauth_token)
                     dl_info = ydl.extract_info(url, download=True)
                     if "requested_downloads" in dl_info and dl_info["requested_downloads"]:
                         final_filepath = dl_info["requested_downloads"][0]["filepath"]
@@ -446,6 +466,10 @@ def process_download_job(
                 job["filename"] = client_filename
                 job["status"]   = "ready"
                 job["message"]  = "준비 완료! 기기로 전송을 시작합니다."
+
+        finally:
+            if temp_cache_dir:
+                shutil.rmtree(temp_cache_dir, ignore_errors=True)
 
     except Exception as e:
         error_msg = str(e)
