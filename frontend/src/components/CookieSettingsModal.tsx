@@ -11,7 +11,7 @@ interface Props {
 interface AuthStatus {
   has_cookies: boolean;
   has_google_auth: boolean;
-  has_tv_cookies: boolean;
+  has_tv_oauth: boolean;
   auth_method: 'tv_oauth' | 'cookie' | 'none';
 }
 
