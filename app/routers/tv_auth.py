@@ -75,7 +75,7 @@ async def poll_device_token(req: PollRequest, current_user: models.User = Depend
             json={
                 'client_id': CLIENT_ID,
                 'client_secret': CLIENT_SECRET,
-                'code': req.device_code,
+                'device_code': req.device_code,
                 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'
             },
             headers={'Content-Type': 'application/json'}
