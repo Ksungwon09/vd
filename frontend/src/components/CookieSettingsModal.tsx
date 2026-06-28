@@ -50,9 +50,13 @@ const CookieSettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaveSuccess }
     setTvSuccess('');
     try {
       const res = await api.post('/video/tv-auth/fetch');
+      const d = res.data;
+      const ytCookies = d.youtube_cookies?.join(', ') || '-';
+      const gCookies  = d.google_cookies?.join(', ')  || '-';
       setTvSuccess(
-        `✅ YouTube TV 인증 완료! ${res.data.cookie_count}개 쿠키를 획득했습니다.\n` +
-        `획득 쿠키: ${res.data.cookies_acquired.join(', ')}`
+        `${d.message}\n\n` +
+        `YouTube 쿠키: ${ytCookies}\n` +
+        `Google 쿠키: ${gCookies}`
       );
       await checkStatus();
       onSaveSuccess();

@@ -105,8 +105,10 @@ async def get_video_info(
 ):
     """영상 메타데이터(제목, 썸네일, 포맷 목록) 조회."""
 
-    user_id  = current_user.id
-    username = current_user.username
+    user_id      = current_user.id
+    username     = current_user.username
+    # Google OAuth2 access_token → InnerTube API Bearer 인증 폴백
+    google_token = await get_google_access_token(current_user)
 
     def extract_info():
         # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → 미인증 ──────────────────
@@ -133,6 +135,9 @@ async def get_video_info(
                 }
                 if cookie_file:
                     ydl_opts["cookiefile"] = cookie_file
+                # 쿠키 없이도 Bearer 토큰으로 YouTube InnerTube API 인증 시도
+                if google_token and not cookie_file:
+                    ydl_opts["http_headers"] = {"Authorization": f"Bearer {google_token}"}
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=False)
@@ -332,6 +337,9 @@ async def prepare_download(
     current_user:     models.User = Depends(get_current_user_from_token_query),
 ):
     """백그라운드 다운로드 작업을 시작하고 job_id를 반환합니다."""
+    # 비동기 컨텍스트에서 미리 Google access_token 획득 (sync job에 전달)
+    google_token = await get_google_access_token(current_user)
+
     job_id = str(uuid.uuid4())
     download_jobs[job_id] = {
         "id":       job_id,
@@ -345,7 +353,8 @@ async def prepare_download(
         process_download_job,
         job_id, url, format_id,
         current_user.username,
-        current_user.id,   # TV 쿠키 조회용 user_id 추가
+        current_user.id,      # TV 쿠키 조회용 user_id
+        google_token,         # Bearer 인증 폴백용 access_token
     )
     return {"job_id": job_id}
 
@@ -362,11 +371,12 @@ async def get_job_status(
 
 
 def process_download_job(
-    job_id:   str,
-    url:      str,
-    format_id: str,
-    username: str,
-    user_id:  int,
+    job_id:       str,
+    url:          str,
+    format_id:    str,
+    username:     str,
+    user_id:      int,
+    google_token: Optional[str] = None,
 ):
     """동기 백그라운드 작업: yt-dlp로 영상 다운로드."""
     job = download_jobs.get(job_id)
@@ -374,7 +384,7 @@ def process_download_job(
         return
 
     try:
-        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → 미인증 ──────────────────
+        # ── 인증 우선순위: TV 쿠키 → 레거시 쿠키 → Bearer 토큰 → 미인증 ─────
         with temporary_tv_cookie(user_id) as tv_cookie:
             with temporary_decrypted_cookie(username) as legacy_cookie:
                 cookie_file = tv_cookie or legacy_cookie
@@ -390,6 +400,11 @@ def process_download_job(
                     "youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]},
                 }
 
+                # 공통 http_headers: 쿠키 없으면 Bearer 토큰으로 InnerTube API 인증 시도
+                common_headers: Optional[dict] = None
+                if google_token and not cookie_file:
+                    common_headers = {"Authorization": f"Bearer {google_token}"}
+
                 # 1. 제목 조회
                 ydl_opts_info = {
                     "quiet":         True,
@@ -400,6 +415,8 @@ def process_download_job(
                 }
                 if cookie_file:
                     ydl_opts_info["cookiefile"] = cookie_file
+                if common_headers:
+                    ydl_opts_info["http_headers"] = common_headers
 
                 with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
                     info  = ydl.extract_info(url, download=False)
@@ -438,6 +455,8 @@ def process_download_job(
                 }
                 if cookie_file:
                     ydl_opts["cookiefile"] = cookie_file
+                if common_headers:
+                    ydl_opts["http_headers"] = common_headers
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     dl_info = ydl.extract_info(url, download=True)
