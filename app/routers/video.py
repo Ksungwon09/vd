@@ -266,7 +266,9 @@ async def delete_cookies(current_user: models.User = Depends(get_current_active_
 
 @router.get("/cookies/status")
 async def check_cookies_status(current_user: models.User = Depends(get_current_active_user)):
-    has_legacy_cookie = has_legacy_cookies(current_user.username)
+    enc = os.path.join(COOKIES_DIR, f"{current_user.username}.enc")
+    txt = os.path.join(COOKIES_DIR, f"{current_user.username}.txt")
+    has_legacy_cookie = os.path.exists(enc) or os.path.exists(txt)
     has_google_auth   = bool(current_user.google_refresh_token)
     tv_oauth          = has_tv_oauth_token(current_user.id)
 
