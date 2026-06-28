@@ -440,13 +440,13 @@ def process_download_job(
                     "remote_components":   ["ejs:github"],
                 }
                 if cookie_file:
-                    ydl_opts_dl["cookiefile"] = cookie_file
+                    ydl_opts["cookiefile"] = cookie_file
                 if temp_cache_dir:
-                    ydl_opts_dl["cachedir"] = temp_cache_dir
-                    ydl_opts_dl["username"] = "oauth2"
-                    ydl_opts_dl["password"] = ""
+                    ydl_opts["cachedir"] = temp_cache_dir
+                    ydl_opts["username"] = "oauth2"
+                    ydl_opts["password"] = ""
 
-                with yt_dlp.YoutubeDL(ydl_opts_dl) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     if temp_cache_dir:
                         ydl.cache.store("youtube-oauth2", "youtube", tv_oauth_token)
                     dl_info = ydl.extract_info(url, download=True)
@@ -467,9 +467,10 @@ def process_download_job(
                 job["status"]   = "ready"
                 job["message"]  = "준비 완료! 기기로 전송을 시작합니다."
 
-        finally:
-            if temp_cache_dir:
-                shutil.rmtree(temp_cache_dir, ignore_errors=True)
+            finally:
+                if temp_cache_dir:
+                    import shutil
+                    shutil.rmtree(temp_cache_dir, ignore_errors=True)
 
     except Exception as e:
         error_msg = str(e)
